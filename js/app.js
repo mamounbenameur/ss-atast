@@ -1,6 +1,6 @@
 // ATAST Student Section - application logic.
 // Firebase Auth (event manager login) + Realtime Database (events, club board and members).
-import { FIREBASE_CONFIG, CLUBS, EVENT_CATEGORIES, STUDENT_BOARD } from './config.js';
+import { FIREBASE_CONFIG, CLUBS, EVENT_CATEGORIES, REPEATABLE_CATEGORIES, STUDENT_BOARD, ADMIN_EMAIL } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   initializeAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail,
@@ -27,7 +27,7 @@ const prettyDate = s => { const [y, m, d] = s.split('-').map(Number); return d +
 const sortedKeys = o => Object.keys(o || {}).sort();
 
 /* ------------------------------------------------------------------ state */
-let session = null;                 // { email, clubId } for a signed-in event manager, else null
+let session = null;                 // { email, clubId|null, admin } when signed in (manager and/or admin), else null
 let events = {};                    // { 'YYYY-MM-DD': {clubId,title,...} }  one per date
 let clubData = {};                  // { clubId: { board:{id:{name,role}}, members:{id:{name,role}} } }
 let month = new Date(); month.setDate(1);
@@ -37,7 +37,10 @@ function clubForEmail(email) {
   const e = (email || '').trim().toLowerCase();
   return e ? CLUBS.find(c => (c.managerEmail || '').trim().toLowerCase() === e) || null : null;
 }
-const isMine = clubId => !!session && session.clubId === clubId;
+const isMine = clubId => !!session && !!session.clubId && session.clubId === clubId;        // manager of this club
+const isAdmin = () => !!session && !!session.admin;
+const isAdminEmail = email => !!ADMIN_EMAIL && (email || '').trim().toLowerCase() === ADMIN_EMAIL.trim().toLowerCase();
+const canRemovePeople = clubId => isMine(clubId) || isAdmin();                                // admin removes in any club
 
 /* ------------------------------------------------------------------ messages */
 function authErrorText(e) {
@@ -140,15 +143,15 @@ function openLogin() {
       ok.disabled = true; ok.textContent = 'Signing in…'; showMsg(msg, '');
       try {
         const cred = await withLimit(signInWithEmailAndPassword(auth, email.value.trim(), pass.value));
-        const club = clubForEmail(cred.user.email);
-        if (!club) {
+        const club = clubForEmail(cred.user.email), admin = isAdminEmail(cred.user.email);
+        if (!club && !admin) {
           await signOut(auth).catch(() => {});
           ok.disabled = false; ok.textContent = 'Sign in';
           showMsg(msg, 'This account is not registered as an event manager for any club.');
           return;
         }
         closeModal();
-        location.hash = '#club/' + club.id;
+        location.hash = club ? '#club/' + club.id : '#clubs';
       } catch (e) {
         ok.disabled = false; ok.textContent = 'Sign in'; showMsg(msg, authErrorText(e));
       }
@@ -181,17 +184,28 @@ function openReset(prefill) {
 }
 
 /* ------------------------------------------------------------------ events: add / view / delete */
-const CATEGORY_OPTIONS = EVENT_CATEGORIES.map(c => '<option>' + esc(c) + '</option>').join('');
+// A category can be used once per club (except the ones in REPEATABLE_CATEGORIES).
+function usedCategories(clubId) {
+  const used = new Set();
+  Object.keys(events).forEach(d => { const e = events[d]; if (e.clubId === clubId && e.category && !REPEATABLE_CATEGORIES.includes(e.category)) used.add(e.category); });
+  return used;
+}
+function categoryOptions(clubId) {
+  const used = usedCategories(clubId);
+  return EVENT_CATEGORIES.map(c => '<option' + (used.has(c) ? ' disabled' : '') + '>' + esc(c) + (used.has(c) ? ' (already used)' : '') + '</option>').join('');
+}
 
 function openAddEvent(prefillDate) {
   if (!session) { openLogin(); return; }
+  if (!session.clubId) return;                       // the admin account cannot add events
   const club = clubById(session.clubId);
   openModal(`
     <h3>Add an event for ${esc(club.name)}</h3>
     <label for="aeTitle">Title</label><input id="aeTitle" maxlength="120">
     <label for="aeDate">Date</label><input id="aeDate" type="date" min="${today()}" value="${esc(prefillDate || '')}">
     <div id="aeAvail" style="font-size:13px;margin-top:4px"></div>
-    <label for="aeCat">Category</label><select id="aeCat">${CATEGORY_OPTIONS}</select>
+    <label for="aeCat">Category</label><select id="aeCat">${categoryOptions(session.clubId)}</select>
+    <div id="aeCatNote" style="font-size:12px;color:var(--soft);margin-top:4px">Each category can be used once per club.</div>
     <label for="aeLoc">Location (optional)</label><input id="aeLoc" maxlength="120">
     <label for="aeDesc">Description (optional)</label><textarea id="aeDesc" maxlength="300"></textarea>
     <div id="aeMsg"></div>
@@ -220,6 +234,7 @@ function openAddEvent(prefillDate) {
       if (!rec.title) { showMsg(msg, 'Enter a title.'); return; }
       if (!rec.date) { showMsg(msg, 'Pick a date.'); return; }
       if (rec.date < today()) { showMsg(msg, 'Pick a date that is today or later.'); return; }
+      if (usedCategories(session.clubId).has(rec.category)) { showMsg(msg, 'Your club already used "' + esc(rec.category) + '". Choose another category.'); return; }
       // Re-check against the live database right now, not just the copy in this page.
       try {
         const snap = await withLimit(get(ref(db, 'event/' + rec.date)));
@@ -243,12 +258,12 @@ function openEventDetail(date) {
     <h3>${esc(e.title)}</h3>
     <p class="sub"><span class="dot" style="background:${club ? club.color : '#999'}"></span>${esc(club ? club.name : 'Unknown club')}</p>
     <div class="summary">${esc(prettyDate(date))}${e.category ? ' · ' + esc(e.category) : ''}${e.location ? '<br>' + esc(e.location) : ''}${e.desc ? '<br><br>' + esc(e.desc) : ''}</div>
-    <div class="acts">${isMine(e.clubId) ? '<button class="btn danger" id="edDel">Delete event</button>' : ''}<button class="btn ghost" id="edClose">Close</button></div>`, m => {
+    <div class="acts">${isAdmin() ? '<button class="btn danger" id="edDel">Delete event</button>' : ''}<button class="btn ghost" id="edClose">Close</button></div>`, m => {
     $('#edClose', m).onclick = closeModal;
     const del = $('#edDel', m);
     if (del) del.onclick = () => confirmWithPassword({
       title: 'Delete this event?', danger: true, confirmText: 'Delete event',
-      summaryHtml: `<b>${esc(e.title)}</b><br>${esc(prettyDate(date))}<br>This cannot be undone.`,
+      summaryHtml: `<b>${esc(e.title)}</b><br>${esc(prettyDate(date))} · ${esc(club ? club.name : '')}<br>This cannot be undone.`,
       action: async () => { await withLimit(remove(ref(db, 'event/' + date))); toast('Event deleted'); }
     });
   });
@@ -256,7 +271,7 @@ function openEventDetail(date) {
 
 /* ------------------------------------------------------------------ club board / members: add / delete */
 function openAddPerson(listName) {            // listName: 'board' | 'members'
-  if (!session) return;
+  if (!session || !session.clubId) return;
   const isBoard = listName === 'board';
   openModal(`
     <h3>Add ${isBoard ? 'a board member' : 'a member'}</h3>
@@ -284,7 +299,7 @@ function openAddPerson(listName) {            // listName: 'board' | 'members'
   });
 }
 function askDeletePerson(clubId, listName, id) {
-  const p = (((clubData[clubId] || {})[listName]) || {})[id]; if (!p) return;
+  const p = (((clubData[clubId] || {})[listName]) || {})[id]; if (!p || !canRemovePeople(clubId)) return;
   confirmWithPassword({
     title: 'Remove this person?', danger: true, confirmText: 'Remove',
     summaryHtml: `Remove <b>${esc(p.name)}</b>${p.role ? ' (' + esc(p.role) + ')' : ''} from the ${listName === 'board' ? 'board' : 'members'}.`,
@@ -318,7 +333,7 @@ function viewCalendar() {
   for (let i = 0; i < first; i++) cells += '<div class="cell out"></div>';
   for (let d = 1; d <= days; d++) {
     const key = y + '-' + pad(mo + 1) + '-' + pad(d), e = events[key];
-    const free = !e, can = free && session && key >= t;
+    const free = !e, can = free && session && session.clubId && key >= t;
     cells += `<div class="cell ${key === t ? 'today' : ''} ${free ? 'free' : ''} ${can ? 'can' : ''}" data-day="${key}" ${can ? 'title="Add an event on this day"' : ''}>
       <span class="n">${d}</span>
       ${e ? `<button class="chip" data-open="${key}" style="background:${(clubById(e.clubId) || {}).color || '#999'}">${esc(e.title)}</button>` : ''}</div>`;
@@ -326,10 +341,10 @@ function viewCalendar() {
   const list = sortedKeys(events).filter(k => k.startsWith(y + '-' + pad(mo + 1)));
   return `
     <h1>Calendar</h1>
-    <p class="sub">${session ? 'Click an empty day to add an event for ' + esc(clubById(session.clubId).name) + '. One event per day for the whole section.' : 'Everyone can see the events. Event managers sign in to add events for their club.'}</p>
+    <p class="sub">${session && session.clubId ? 'Click an empty day to add an event for ' + esc(clubById(session.clubId).name) + '. One event per day for the whole section.' : session ? 'Signed in as admin: open an event to delete it.' : 'Everyone can see the events. Event managers sign in to add events for their club.'}</p>
     <div class="cal-head"><h2>${MONTHS[mo]} ${y}</h2>
       <button class="btn ghost small" id="prevM">‹ Prev</button><button class="btn ghost small" id="todayM">Today</button><button class="btn ghost small" id="nextM">Next ›</button>
-      ${session ? '<button class="btn small" id="addEv">+ Add event</button>' : ''}</div>
+      ${session && session.clubId ? '<button class="btn small" id="addEv">+ Add event</button>' : ''}</div>
     <div class="cal">${cells}</div>
     <div class="legend">${CLUBS.map(c => `<span><span class="dot" style="background:${c.color}"></span>${esc(c.name.replace('ATAST Club ', ''))}</span>`).join('')}</div>
     <h2>This month</h2><div class="card">${list.length ? list.map(eventRow).join('') : '<div class="empty">No events this month.</div>'}</div>`;
@@ -347,13 +362,13 @@ function peopleList(clubId, listName, empty) {
   const ids = Object.keys(items).sort((a, b) => (items[a].name || '').localeCompare(items[b].name || ''));
   if (!ids.length) return '<div class="empty">' + empty + '</div>';
   return ids.map(id => `<div class="row"><div><b>${esc(items[id].name)}</b>${items[id].role ? '<div class="r">' + esc(items[id].role) + '</div>' : ''}</div>
-    ${isMine(clubId) ? `<button class="btn danger small" data-delp="${listName}|${id}">Remove</button>` : ''}</div>`).join('');
+    ${canRemovePeople(clubId) ? `<button class="btn danger small" data-delp="${listName}|${id}">Remove</button>` : ''}</div>`).join('');
 }
 function viewClub(id) {
   const c = clubById(id);
   if (!c) return '<h1>Club not found</h1><p><a href="#clubs">Back to clubs</a></p>';
   const mine = isMine(id);
-  const evs = sortedKeys(events).filter(k => events[k].clubId === id && k >= today());
+  const evs = sortedKeys(events).filter(k => events[k].clubId === id && (k >= today() || isAdmin()));
   return `
     <p><a href="#clubs">‹ All clubs</a></p>
     <h1><span class="dot" style="background:${c.color};width:16px;height:16px"></span>${esc(c.name)}</h1>
@@ -362,8 +377,8 @@ function viewClub(id) {
       <div class="card"><div class="row" style="border:0;padding-top:0"><h3>Board</h3>${mine ? '<button class="btn small" id="addBoard">+ Add</button>' : ''}</div>${peopleList(id, 'board', 'No board members listed yet.')}</div>
       <div class="card"><div class="row" style="border:0;padding-top:0"><h3>Members</h3>${mine ? '<button class="btn small" id="addMember">+ Add</button>' : ''}</div>${peopleList(id, 'members', 'No members listed yet.')}</div>
     </div>
-    <h2>Upcoming events of this club</h2>
-    <div class="card">${evs.length ? evs.map(k => eventRow(k) + (mine ? `<div style="text-align:right"><button class="btn danger small" data-delev="${k}">Delete</button></div>` : '')).join('') : '<div class="empty">No upcoming events.</div>'}</div>
+    <h2>${isAdmin() ? 'Events of this club' : 'Upcoming events of this club'}</h2>
+    <div class="card">${evs.length ? evs.map(k => eventRow(k) + (isAdmin() ? `<div style="text-align:right"><button class="btn danger small" data-delev="${k}">Delete</button></div>` : '')).join('') : '<div class="empty">No upcoming events.</div>'}</div>
     ${mine ? '<p><button class="btn" id="addEv">+ Add event</button></p>' : ''}`;
 }
 
@@ -386,8 +401,8 @@ function bindView(r) {
   const on = (sel, fn) => view.querySelectorAll(sel).forEach(el => el.addEventListener('click', ev => fn(el, ev)));
   on('[data-open]', (el, ev) => { ev.stopPropagation(); openEventDetail(el.dataset.open); });
   on('.cell.can', el => openAddEvent(el.dataset.day));
+  on('[data-delev]', el => openEventDetail(el.dataset.delev));
   on('[data-delp]', el => { const [l, id] = el.dataset.delp.split('|'); askDeletePerson(r.param, l, id); });
-  on('[data-delev]', el => { openEventDetail(el.dataset.delev); });
   const bind = (id, fn) => { const b = view.querySelector(id); if (b) b.onclick = fn; };
   bind('#addEv', () => openAddEvent());
   bind('#addBoard', () => openAddPerson('board'));
@@ -399,8 +414,9 @@ function bindView(r) {
 function renderAuthBox() {
   const box = $('#authBox');
   if (session) {
-    const c = clubById(session.clubId);
-    box.innerHTML = `<a href="#club/${c.id}">${esc(c.name.replace('ATAST Club ', ''))} manager</a><button class="btn ghost small" id="outBtn">Sign out</button>`;
+    const c = session.clubId ? clubById(session.clubId) : null;
+    const label = (c ? c.name.replace('ATAST Club ', '') + (isAdmin() ? ' manager · Admin' : ' manager') : 'Admin');
+    box.innerHTML = `<a href="${c ? '#club/' + c.id : '#clubs'}">${esc(label)}</a><button class="btn ghost small" id="outBtn">Sign out</button>`;
     $('#outBtn').onclick = () => signOut(auth);
   } else {
     box.innerHTML = '<button class="btn small" id="inBtn">Event manager sign in</button>';
@@ -422,9 +438,9 @@ onValue(ref(db, 'event'), snap => {
 onValue(ref(db, 'clubs'), snap => { clubData = snap.val() || {}; render(); }, () => {});
 
 onAuthStateChanged(auth, user => {
-  const club = user ? clubForEmail(user.email) : null;
-  if (user && !club) { signOut(auth).catch(() => {}); session = null; }
-  else session = club ? { email: user.email, clubId: club.id } : null;
+  const club = user ? clubForEmail(user.email) : null, admin = !!user && isAdminEmail(user.email);
+  if (user && !club && !admin) { signOut(auth).catch(() => {}); session = null; }
+  else session = user ? { email: user.email, clubId: club ? club.id : null, admin } : null;
   render();
 });
 

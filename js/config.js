@@ -21,22 +21,30 @@ export const FIREBASE_CONFIG = {
 //    because the database rules use it to decide who may write for which club.
 //    Leave managerEmail empty ('') for a club that has no manager yet.
 export const CLUBS = [
-  { id: 'c1', name: 'ATAST Club UPSAT Sousse', color: '#3D6BF0', managerName: 'Hassen Ammara',     managerEmail: 'benameurmamoun3@gmail.com' },
-  { id: 'c2', name: 'ATAST Club ISSATSO',      color: '#C6438E', managerName: 'Abderrahman Limem', managerEmail: '' },
-  { id: 'c3', name: 'ATAST Club ISIMM',        color: '#2E9B5C', managerName: 'Bouajila Yosr',     managerEmail: '' },
-  { id: 'c4', name: 'ATAST Club ISACM',        color: '#8CC63F', managerName: '',                  managerEmail: '' },
-  { id: 'c5', name: 'ATAST Club Horizon',      color: '#E8792B', managerName: 'Adem Hmila',        managerEmail: '' },
-  { id: 'c6', name: 'ATAST Club FMS',          color: '#2AACA4', managerName: 'Chaima Hmida',      managerEmail: '' },
-  { id: 'c7', name: 'ATAST Club ISITCOM',      color: '#7B5FE0', managerName: 'Houssem Ahmed',     managerEmail: '' },
-  { id: 'c8', name: 'ATAST Club ISMAIK',       color: '#E0B23D', managerName: 'Sara Aouinet',      managerEmail: '' },
-  { id: 'c9', name: 'ATAST Club ISGIK',        color: '#E0473D', managerName: 'Fedi Mejrissi',     managerEmail: '' },
+  { id: 'c1', name: 'ATAST Club UPSAT Sousse', color: '#3D6BF0', managerName: 'Hassen Ammara',     managerEmail: 'kalifameriam12@gmail.com' },
+  { id: 'c2', name: 'ATAST Club ISSATSO',      color: '#C6438E', managerName: 'Abderrahman Limem', managerEmail: 'limemabderrahman@gmail.com' },
+  { id: 'c3', name: 'ATAST Club ISIMM',        color: '#2E9B5C', managerName: 'Bouajila Yosr',     managerEmail: 'bouajilayosr@gmail.com' },
+  { id: 'c10', name: 'ATAST Club ISIMA',       color: '#8D5A3B', managerName: 'Lina Boubaker',                  managerEmail: 'linaboubaker2006@gmail.com' },
+  { id: 'c4', name: 'ATAST Club ISACM',        color: '#8CC63F', managerName: '',                  managerEmail: 'atastisacm@gmail.com' },
+  { id: 'c5', name: 'ATAST Club Horizon',      color: '#E8792B', managerName: 'Adem Hmila',        managerEmail: 'adem.hmila@horizon-university.tn' },
+  { id: 'c6', name: 'ATAST Club FMS',          color: '#2AACA4', managerName: 'Chaima Hmida',      managerEmail: 'chaimahmida16@gmail.com' },
+  { id: 'c7', name: 'ATAST Club ISITCOM',      color: '#7B5FE0', managerName: 'Houssem Ahmed',     managerEmail: 'ahmedhoussem640@gmail.com' },
+  { id: 'c8', name: 'ATAST Club ISMAIK',       color: '#E0B23D', managerName: 'Sara Aouinet',      managerEmail: 'saraaouinet14@gmail.com' },
+  { id: 'c9', name: 'ATAST Club ISGIK',        color: '#E0473D', managerName: 'Fedi Mejrissi',     managerEmail: 'fedimejrissi26@gmail.com' },
 ];
+
+// 2b) ADMIN EMAIL - this account can REMOVE any event, board member or member of any club.
+//     (It cannot add things for a club.) Create it in Firebase Authentication like a manager,
+//     and put the SAME email in the database node  "admin"  (a single text value, see firebase-managers.json).
+export const ADMIN_EMAIL = 'tasnimjarray69@gmail.com';
 
 // 3) Categories offered when an event manager adds an event
 export const EVENT_CATEGORIES = [
-  'Event', 'Workshop', 'Ice Breaking', 'Hackathon / Conference', 'Training',
+  'Event', 'Ice Breaking', 'Hackathon / Conference', 'Workshop 1', 'Workshop 2', 'Workshop 3',
   'BTech Day', 'Fun time / Outing', 'Project of the Year', 'Robotics Competition'
 ];
+// Each club can use a category only ONCE. Categories listed here are the exception and can be repeated.
+export const REPEATABLE_CATEGORIES = ['Event'];
 
 // 4) Student Section board shown on the home page (display only)
 export const STUDENT_BOARD = [

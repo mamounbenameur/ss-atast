@@ -18,7 +18,7 @@
 @media (prefers-reduced-motion:reduce){#loader .ld-line i{animation:none;width:100%}}
 
 /* ---------- menu icons + bar ---------- */
-.bar{display:flex;align-items:center;gap:16px;flex:1}
+.top .bar{display:flex;align-items:center;gap:16px;flex:1}
 nav a{display:inline-flex;align-items:center;gap:7px}
 nav a .ic{width:18px;height:18px;flex:none}
 #authBox a,#authBox button{display:inline-flex;align-items:center}
@@ -63,7 +63,7 @@ nav a .ic{width:18px;height:18px;flex:none}
   #inBtn,#outBtn,#authBox a{font-size:0;padding:0;width:44px;height:40px;justify-content:center;border-radius:10px}
   #authBox a{color:var(--accent);background:var(--accent-soft)}
   #inBtn::before,#outBtn::before,#authBox a::before{width:23px;height:23px;margin:0}
-  .bar{position:fixed;left:14px;right:14px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:30;flex:none;
+  .top .bar{position:fixed;left:14px;right:14px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:30;flex:none;
        background:#fff;border-radius:999px;padding:6px;box-shadow:0 6px 26px rgba(20,20,50,.22),0 0 0 1px rgba(20,20,50,.05)}
   nav{flex:1;justify-content:space-between;gap:4px}
   nav a{flex:1;justify-content:center;padding:11px 0;border-radius:999px;color:#1c1e21}
@@ -77,6 +77,10 @@ nav a .ic{width:18px;height:18px;flex:none}
   .toast{bottom:96px}
 }
 @media(max-width:560px){ .board-wrap .grid{grid-template-columns:1fr} .stats>div{padding:14px 16px} .stats b{font-size:26px} }
+
+/* ---------- bigger main image ---------- */
+.hero{height:500px}
+@media(max-width:700px){.hero{height:380px}}
 
 /* ---------- long text stays inside its box ---------- */
 .modal,.summary,.ev,.ev>div,.card,.row>div,.sub{overflow-wrap:anywhere;word-break:break-word}
