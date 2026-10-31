@@ -1,0 +1,44 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "managers": {
+      ".read": false,
+      ".write": false
+    },
+
+    "event": {
+      ".read": true,
+      "$date": {
+        ".write": "auth != null && auth.token.email != null && ((!data.exists() && newData.exists() && newData.child('clubId').isString() && root.child('managers').child(newData.child('clubId').val()).val() === auth.token.email) || (data.exists() && !newData.exists() && root.child('managers').child(data.child('clubId').val()).val() === auth.token.email))",
+        ".validate": "$date.matches(/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) && newData.hasChildren(['kind', 'clubId', 'title', 'date', 'createdBy', 'createdAt']) && newData.child('date').val() === $date && newData.child('kind').val() === 'event'",
+        "kind":      { ".validate": "newData.isString()" },
+        "clubId":    { ".validate": "newData.isString()" },
+        "title":     { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 120" },
+        "date":      { ".validate": "newData.isString()" },
+        "category":  { ".validate": "newData.isString() && newData.val().length <= 40" },
+        "location":  { ".validate": "newData.isString() && newData.val().length <= 120" },
+        "desc":      { ".validate": "newData.isString() && newData.val().length <= 300" },
+        "createdBy": { ".validate": "newData.isString() && newData.val() === auth.token.email" },
+        "createdAt": { ".validate": "newData.isNumber()" },
+        "$other":    { ".validate": false }
+      }
+    },
+
+    "clubs": {
+      ".read": true,
+      "$clubId": {
+        "$list": {
+          "$id": {
+            ".write": "($list === 'board' || $list === 'members') && auth != null && auth.token.email != null && root.child('managers').child($clubId).val() === auth.token.email",
+            ".validate": "($list === 'board' || $list === 'members') && newData.hasChild('name')",
+            "name":   { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 80" },
+            "role":   { ".validate": "newData.isString() && newData.val().length <= 60" },
+            "$other": { ".validate": false }
+          }
+        }
+      }
+    }
+  }
+}
