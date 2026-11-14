@@ -199,12 +199,21 @@ const evKey = e => e.date + '|' + e.clubId;
 function recordsOf(date, node) {
   if (!node || typeof node !== 'object') return [];
   if (node.title && node.clubId) return clubById(node.clubId) ? [Object.assign({}, node, { date, _legacy: true })] : [];
-  return Object.keys(node).map(cid => node[cid]).filter(r => r && typeof r === 'object' && r.title && r.clubId && clubById(r.clubId))
-    .map(r => Object.assign({}, r, { date }));
+  return Object.keys(node).filter(k => { const r = node[k]; return r && typeof r === 'object' && r.title && r.clubId && clubById(r.clubId); })
+    .map(k => Object.assign({}, node[k], { date, _key: k }));
 }
+const slotOf = (category, clubId) => isBig(category) ? 'big' : clubId;   // big events are stored under the fixed key "big" so the database rules can see them
 // Returns '' when the club may use this day for this category, otherwise the reason it cannot.
+//  - a day with a BIG event is closed to every other activity
+//  - a BIG event needs a day with no other event
+//  - normal activities of different clubs can share a day (but one event per club per day)
 function dayProblem(list, date, category, clubId) {
   if (list.some(e => e.clubId === clubId)) return 'Your club already has an event on ' + prettyDate(date) + '.';
+  const big = list.find(e => isBig(e.category));
+  if (big) {
+    const bc = clubById(big.clubId);
+    return (bc ? bc.name : 'Another club') + ' has a big event ("' + big.title + '") on ' + prettyDate(date) + '. No other activity can be held that day.';
+  }
   if (isBig(category) && list.length) {
     const o = list[0], oc = clubById(o.clubId);
     return (oc ? oc.name : 'Another club') + ' already has "' + o.title + '" on ' + prettyDate(date) + '. A big event (' + category + ') needs a day with no other event.';
@@ -234,7 +243,7 @@ function openAddEvent(prefillDate) {
     const title = $('#aeTitle', m), date = $('#aeDate', m), avail = $('#aeAvail', m), msg = $('#aeMsg', m), note = $('#aeCatNote', m);
     const check = () => {
       const d = date.value, cat = $('#aeCat', m).value.replace(/ \(already used\)$/, '');
-      note.textContent = isBig(cat) ? 'Big event: needs a day with no other event. Each category can be used once per club.' : 'Each category can be used once per club. Other clubs can hold an activity on the same day.';
+      note.textContent = isBig(cat) ? 'Big event: needs a day with no other event, and nothing else can be held that day. Each category can be used once per club.' : 'Each category can be used once per club. Other clubs can hold an activity on the same day, unless it has a big event.';
       if (!d) { avail.textContent = ''; return true; }
       const on = eventsOn(d), problem = dayProblem(on, d, cat, session.clubId);
       if (problem) { avail.style.color = 'var(--danger)'; avail.textContent = 'Not available: ' + problem; return false; }
@@ -268,7 +277,7 @@ function openAddEvent(prefillDate) {
         summaryHtml: `<b>${esc(rec.title)}</b><br>${esc(prettyDate(rec.date))} · ${esc(rec.category)}<br>${esc(club.name)}${rec.location ? '<br>' + esc(rec.location) : ''}`,
         confirmText: 'Add event',
         onBack: () => openAddEvent(rec.date),
-        action: async () => { await withLimit(set(ref(db, 'event/' + rec.date + '/' + rec.clubId), rec)); toast('Event added'); }
+        action: async () => { await withLimit(set(ref(db, 'event/' + rec.date + '/' + slotOf(rec.category, rec.clubId)), rec)); toast('Event added'); }
       });
     };
   });
@@ -288,7 +297,7 @@ function openEventDetail(key) {
     if (del) del.onclick = () => confirmWithPassword({
       title: 'Delete this event?', danger: true, confirmText: 'Delete event',
       summaryHtml: `<b>${esc(e.title)}</b><br>${esc(prettyDate(date))} · ${esc(club ? club.name : '')}<br>This cannot be undone.`,
-      action: async () => { await withLimit(remove(ref(db, 'event/' + date + (e._legacy ? '' : '/' + e.clubId)))); toast('Event deleted'); }
+      action: async () => { await withLimit(remove(ref(db, 'event/' + date + (e._legacy ? '' : '/' + (e._key || e.clubId))))); toast('Event deleted'); }
     });
   });
 }
@@ -357,7 +366,7 @@ function viewCalendar() {
   for (let i = 0; i < first; i++) cells += '<div class="cell out"></div>';
   for (let d = 1; d <= days; d++) {
     const key = y + '-' + pad(mo + 1) + '-' + pad(d), on = eventsOn(key);
-    const can = !!(session && session.clubId && key >= t && !on.some(e => e.clubId === session.clubId));
+    const can = !!(session && session.clubId && key >= t && !on.some(e => e.clubId === session.clubId || isBig(e.category)));   // a big-event day is closed
     cells += `<div class="cell ${key === t ? 'today' : ''} ${can ? 'free can' : ''}" data-day="${key}" ${can ? 'title="Add an event on this day"' : ''}>
       <span class="n">${d}</span>
       ${on.map(e => `<button class="chip" data-open="${esc(evKey(e))}" style="background:${(clubById(e.clubId) || {}).color || '#999'}">${esc(e.title)}</button>`).join('')}</div>`;
@@ -365,7 +374,7 @@ function viewCalendar() {
   const list = sortedKeys(events).filter(k => k.startsWith(y + '-' + pad(mo + 1)));
   return `
     <h1>Calendar</h1>
-    <p class="sub">${session && session.clubId ? 'Click a day to add an event for ' + esc(clubById(session.clubId).name) + '. Clubs can share a day, but a big event (' + esc(BIG_CATEGORIES.join(', ')) + ') needs a day with no other event.' : session ? 'Signed in as admin: open an event to delete it.' : 'Everyone can see the events. Event managers sign in to add events for their club.'}</p>
+    <p class="sub">${session && session.clubId ? 'Click a day to add an event for ' + esc(clubById(session.clubId).name) + '. Clubs can share a day for normal activities. A big event (' + esc(BIG_CATEGORIES.join(', ')) + ') needs an empty day, and a day with a big event is closed to other activities.' : session ? 'Signed in as admin: open an event to delete it.' : 'Everyone can see the events. Event managers sign in to add events for their club.'}</p>
     <div class="cal-head"><h2>${MONTHS[mo]} ${y}</h2>
       <button class="btn ghost small" id="prevM">‹ Prev</button><button class="btn ghost small" id="todayM">Today</button><button class="btn ghost small" id="nextM">Next ›</button>
       ${session && session.clubId ? '<button class="btn small" id="addEv">+ Add event</button>' : ''}</div>
