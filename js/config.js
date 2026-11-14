@@ -38,13 +38,20 @@ export const CLUBS = [
 //     and put the SAME email in the database node  "admin"  (a single text value, see firebase-managers.json).
 export const ADMIN_EMAIL = 'tasnimjarray69@gmail.com';
 
+
 // 3) Categories offered when an event manager adds an event
 export const EVENT_CATEGORIES = [
-  'Event', 'Ice Breaking', 'Hackathon / Conference', 'Workshop 1', 'Workshop 2', 'Workshop 3',
+  'Event', 'Big event', 'Ice Breaking', 'Hackathon / Conference', 'Workshop 1', 'Workshop 2', 'Workshop 3',
   'BTech Day', 'Fun time / Outing', 'Project of the Year', 'Robotics Competition'
 ];
 // Each club can use a category only ONCE. Categories listed here are the exception and can be repeated.
 export const REPEATABLE_CATEGORIES = ['Event'];
+
+// BIG events need a day with NO other event (from any club), and block that day for other big events.
+// Every other category is a normal activity: several clubs may hold one on the same day,
+// including a day where another club has a big event.  (Each club still has at most one event per day.)
+// If you change this list, change the same names in firebase-database.rules.json ("event" > .write).
+export const BIG_CATEGORIES = ['Big event', 'Hackathon / Conference', 'BTech Day', 'Project of the Year'];
 
 // 4) Student Section board shown on the home page (display only)
 export const STUDENT_BOARD = [

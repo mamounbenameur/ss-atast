@@ -1,6 +1,6 @@
 // ATAST Student Section - application logic.
 // Firebase Auth (event manager login) + Realtime Database (events, club board and members).
-import { FIREBASE_CONFIG, CLUBS, EVENT_CATEGORIES, REPEATABLE_CATEGORIES, STUDENT_BOARD, ADMIN_EMAIL } from './config.js';
+import { FIREBASE_CONFIG, CLUBS, EVENT_CATEGORIES, REPEATABLE_CATEGORIES, BIG_CATEGORIES, STUDENT_BOARD, ADMIN_EMAIL } from './config.js';
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
 import {
   initializeAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail,
@@ -28,7 +28,7 @@ const sortedKeys = o => Object.keys(o || {}).sort();
 
 /* ------------------------------------------------------------------ state */
 let session = null;                 // { email, clubId|null, admin } when signed in (manager and/or admin), else null
-let events = {};                    // { 'YYYY-MM-DD': {clubId,title,...} }  one per date
+let events = {};                    // { 'YYYY-MM-DD|clubId': {clubId,title,date,...} }  one per club per day
 let clubData = {};                  // { clubId: { board:{id:{name,role}}, members:{id:{name,role}} } }
 let month = new Date(); month.setDate(1);
 let dbError = '';
@@ -187,8 +187,29 @@ function openReset(prefill) {
 // A category can be used once per club (except the ones in REPEATABLE_CATEGORIES).
 function usedCategories(clubId) {
   const used = new Set();
-  Object.keys(events).forEach(d => { const e = events[d]; if (e.clubId === clubId && e.category && !REPEATABLE_CATEGORIES.includes(e.category)) used.add(e.category); });
+  Object.values(events).forEach(e => { if (e.clubId === clubId && e.category && !REPEATABLE_CATEGORIES.includes(e.category)) used.add(e.category); });
   return used;
+}
+
+// ---- several clubs can share a day, except that a BIG event needs a day with no other event ----
+const isBig = category => BIG_CATEGORIES.includes(category);
+const eventsOn = date => Object.keys(events).filter(k => events[k].date === date).map(k => events[k]);
+const evKey = e => e.date + '|' + e.clubId;
+// Events stored under /event/<date>: new shape = { <clubId>: {...} }, old shape = one flat record.
+function recordsOf(date, node) {
+  if (!node || typeof node !== 'object') return [];
+  if (node.title && node.clubId) return clubById(node.clubId) ? [Object.assign({}, node, { date, _legacy: true })] : [];
+  return Object.keys(node).map(cid => node[cid]).filter(r => r && typeof r === 'object' && r.title && r.clubId && clubById(r.clubId))
+    .map(r => Object.assign({}, r, { date }));
+}
+// Returns '' when the club may use this day for this category, otherwise the reason it cannot.
+function dayProblem(list, date, category, clubId) {
+  if (list.some(e => e.clubId === clubId)) return 'Your club already has an event on ' + prettyDate(date) + '.';
+  if (isBig(category) && list.length) {
+    const o = list[0], oc = clubById(o.clubId);
+    return (oc ? oc.name : 'Another club') + ' already has "' + o.title + '" on ' + prettyDate(date) + '. A big event (' + category + ') needs a day with no other event.';
+  }
+  return '';
 }
 function categoryOptions(clubId) {
   const used = usedCategories(clubId);
@@ -210,19 +231,20 @@ function openAddEvent(prefillDate) {
     <label for="aeDesc">Description (optional)</label><textarea id="aeDesc" maxlength="300"></textarea>
     <div id="aeMsg"></div>
     <div class="acts"><button class="btn ghost" id="aeCancel">Cancel</button><button class="btn" id="aeNext">Review</button></div>`, m => {
-    const title = $('#aeTitle', m), date = $('#aeDate', m), avail = $('#aeAvail', m), msg = $('#aeMsg', m);
+    const title = $('#aeTitle', m), date = $('#aeDate', m), avail = $('#aeAvail', m), msg = $('#aeMsg', m), note = $('#aeCatNote', m);
     const check = () => {
-      const d = date.value;
+      const d = date.value, cat = $('#aeCat', m).value.replace(/ \(already used\)$/, '');
+      note.textContent = isBig(cat) ? 'Big event: needs a day with no other event. Each category can be used once per club.' : 'Each category can be used once per club. Other clubs can hold an activity on the same day.';
       if (!d) { avail.textContent = ''; return true; }
-      const taken = events[d];
-      if (taken) {
-        avail.style.color = 'var(--danger)';
-        avail.textContent = 'Not available: ' + clubById(taken.clubId)?.name + ' already has "' + taken.title + '" on ' + prettyDate(d) + '. Only one event per day.';
-        return false;
-      }
-      avail.style.color = 'var(--ok)'; avail.textContent = 'This date is available.'; return true;
+      const on = eventsOn(d), problem = dayProblem(on, d, cat, session.clubId);
+      if (problem) { avail.style.color = 'var(--danger)'; avail.textContent = 'Not available: ' + problem; return false; }
+      avail.style.color = 'var(--ok)';
+      avail.textContent = on.length
+        ? 'This date is available for this activity. Already on that day: ' + on.map(e => (clubById(e.clubId) || {}).name.replace('ATAST Club ', '') + ' - ' + e.title).join(', ') + '.'
+        : 'This date is available.';
+      return true;
     };
-    date.addEventListener('input', check); check();
+    date.addEventListener('input', check); $('#aeCat', m).addEventListener('change', check); check();
     $('#aeCancel', m).onclick = closeModal;
     $('#aeNext', m).onclick = async () => {
       showMsg(msg, '');
@@ -238,21 +260,23 @@ function openAddEvent(prefillDate) {
       // Re-check against the live database right now, not just the copy in this page.
       try {
         const snap = await withLimit(get(ref(db, 'event/' + rec.date)));
-        if (snap.exists()) { events[rec.date] = snap.val(); check(); showMsg(msg, 'That date was just taken. Choose another day.'); return; }
+        const problem = dayProblem(recordsOf(rec.date, snap.val()), rec.date, rec.category, rec.clubId);
+        if (problem) { recordsOf(rec.date, snap.val()).forEach(r => { events[evKey(r)] = r; }); check(); showMsg(msg, 'Not saved. ' + esc(problem)); return; }
       } catch (e) { showMsg(msg, dbErrorText(e)); return; }
       confirmWithPassword({
         title: 'Confirm new event',
         summaryHtml: `<b>${esc(rec.title)}</b><br>${esc(prettyDate(rec.date))} · ${esc(rec.category)}<br>${esc(club.name)}${rec.location ? '<br>' + esc(rec.location) : ''}`,
         confirmText: 'Add event',
         onBack: () => openAddEvent(rec.date),
-        action: async () => { await withLimit(set(ref(db, 'event/' + rec.date), rec)); toast('Event added'); }
+        action: async () => { await withLimit(set(ref(db, 'event/' + rec.date + '/' + rec.clubId), rec)); toast('Event added'); }
       });
     };
   });
 }
 
-function openEventDetail(date) {
-  const e = events[date]; if (!e) return;
+function openEventDetail(key) {
+  const e = events[key]; if (!e) return;
+  const date = e.date;
   const club = clubById(e.clubId);
   openModal(`
     <h3>${esc(e.title)}</h3>
@@ -264,7 +288,7 @@ function openEventDetail(date) {
     if (del) del.onclick = () => confirmWithPassword({
       title: 'Delete this event?', danger: true, confirmText: 'Delete event',
       summaryHtml: `<b>${esc(e.title)}</b><br>${esc(prettyDate(date))} · ${esc(club ? club.name : '')}<br>This cannot be undone.`,
-      action: async () => { await withLimit(remove(ref(db, 'event/' + date))); toast('Event deleted'); }
+      action: async () => { await withLimit(remove(ref(db, 'event/' + date + (e._legacy ? '' : '/' + e.clubId)))); toast('Event deleted'); }
     });
   });
 }
@@ -308,8 +332,8 @@ function askDeletePerson(clubId, listName, id) {
 }
 
 /* ------------------------------------------------------------------ views */
-function eventRow(date) {
-  const e = events[date], c = clubById(e.clubId);
+function eventRow(key) {
+  const e = events[key], c = clubById(e.clubId), date = e.date;
   return `<div class="ev"><div class="bar" style="background:${c ? c.color : '#999'}"></div>
     <div class="when">${esc(prettyDate(date))}</div>
     <div><div><b>${esc(e.title)}</b> ${e.category ? '<span class="pill">' + esc(e.category) + '</span>' : ''}</div>
@@ -332,16 +356,16 @@ function viewCalendar() {
   let cells = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => `<div class="dow">${d}</div>`).join('');
   for (let i = 0; i < first; i++) cells += '<div class="cell out"></div>';
   for (let d = 1; d <= days; d++) {
-    const key = y + '-' + pad(mo + 1) + '-' + pad(d), e = events[key];
-    const free = !e, can = free && session && session.clubId && key >= t;
-    cells += `<div class="cell ${key === t ? 'today' : ''} ${free ? 'free' : ''} ${can ? 'can' : ''}" data-day="${key}" ${can ? 'title="Add an event on this day"' : ''}>
+    const key = y + '-' + pad(mo + 1) + '-' + pad(d), on = eventsOn(key);
+    const can = !!(session && session.clubId && key >= t && !on.some(e => e.clubId === session.clubId));
+    cells += `<div class="cell ${key === t ? 'today' : ''} ${can ? 'free can' : ''}" data-day="${key}" ${can ? 'title="Add an event on this day"' : ''}>
       <span class="n">${d}</span>
-      ${e ? `<button class="chip" data-open="${key}" style="background:${(clubById(e.clubId) || {}).color || '#999'}">${esc(e.title)}</button>` : ''}</div>`;
+      ${on.map(e => `<button class="chip" data-open="${esc(evKey(e))}" style="background:${(clubById(e.clubId) || {}).color || '#999'}">${esc(e.title)}</button>`).join('')}</div>`;
   }
   const list = sortedKeys(events).filter(k => k.startsWith(y + '-' + pad(mo + 1)));
   return `
     <h1>Calendar</h1>
-    <p class="sub">${session && session.clubId ? 'Click an empty day to add an event for ' + esc(clubById(session.clubId).name) + '. One event per day for the whole section.' : session ? 'Signed in as admin: open an event to delete it.' : 'Everyone can see the events. Event managers sign in to add events for their club.'}</p>
+    <p class="sub">${session && session.clubId ? 'Click a day to add an event for ' + esc(clubById(session.clubId).name) + '. Clubs can share a day, but a big event (' + esc(BIG_CATEGORIES.join(', ')) + ') needs a day with no other event.' : session ? 'Signed in as admin: open an event to delete it.' : 'Everyone can see the events. Event managers sign in to add events for their club.'}</p>
     <div class="cal-head"><h2>${MONTHS[mo]} ${y}</h2>
       <button class="btn ghost small" id="prevM">‹ Prev</button><button class="btn ghost small" id="todayM">Today</button><button class="btn ghost small" id="nextM">Next ›</button>
       ${session && session.clubId ? '<button class="btn small" id="addEv">+ Add event</button>' : ''}</div>
@@ -350,7 +374,7 @@ function viewCalendar() {
     <h2>This month</h2><div class="card">${list.length ? list.map(eventRow).join('') : '<div class="empty">No events this month.</div>'}</div>`;
 }
 function viewClubs() {
-  return `<h1>Clubs</h1><p class="sub">10 clubs, each with its own board and members.</p>
+  return `<h1>Clubs</h1><p class="sub">Nine clubs, each with its own board and members.</p>
     <div class="grid">${CLUBS.map(c => {
       const d = clubData[c.id] || {}, nM = Object.keys(d.members || {}).length;
       return `<a class="card club-card" href="#club/${c.id}" style="border-top:4px solid ${c.color}"><h3>${esc(c.name)}</h3>
@@ -429,8 +453,8 @@ window.addEventListener('hashchange', render);
 
 onValue(ref(db, 'event'), snap => {
   const raw = snap.val() || {}, clean = {};
-  Object.keys(raw).forEach(k => {      // ignore anything that is not a dated record of a known club
-    if (/^\d{4}-\d{2}-\d{2}$/.test(k) && raw[k] && clubById(raw[k].clubId) && raw[k].title) clean[k] = raw[k];
+  Object.keys(raw).forEach(date => {   // ignore anything that is not a dated record of a known club
+    if (/^\d{4}-\d{2}-\d{2}$/.test(date)) recordsOf(date, raw[date]).forEach(r => { clean[evKey(r)] = r; });
   });
   events = clean; dbError = ''; render();
 }, e => { dbError = 'Events could not be loaded (' + (e.code || e.message) + '). Check the database rules and your connection.'; render(); });
