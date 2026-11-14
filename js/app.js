@@ -341,12 +341,13 @@ function askDeletePerson(clubId, listName, id) {
 }
 
 /* ------------------------------------------------------------------ views */
-function eventRow(key) {
+function eventRow(key, actionHtml) {
   const e = events[key], c = clubById(e.clubId), date = e.date;
   return `<div class="ev"><div class="bar" style="background:${c ? c.color : '#999'}"></div>
     <div class="when">${esc(prettyDate(date))}</div>
     <div><div><b>${esc(e.title)}</b> ${e.category ? '<span class="pill">' + esc(e.category) + '</span>' : ''}</div>
-    <div class="meta">${esc(c ? c.name : '')}${e.location ? ' · ' + esc(e.location) : ''}</div></div></div>`;
+    <div class="meta">${esc(c ? c.name : '')}${e.location ? ' · ' + esc(e.location) : ''}</div></div>
+    ${actionHtml ? '<div style="margin-left:auto;align-self:flex-start;flex:none">' + actionHtml + '</div>' : ''}</div>`;
 }
 function viewHome() {
   const up = sortedKeys(events).filter(d => d >= today()).slice(0, 6);
@@ -411,7 +412,7 @@ function viewClub(id) {
       <div class="card"><div class="row" style="border:0;padding-top:0"><h3>Members</h3>${mine ? '<button class="btn small" id="addMember">+ Add</button>' : ''}</div>${peopleList(id, 'members', 'No members listed yet.')}</div>
     </div>
     <h2>${isAdmin() ? 'Events of this club' : 'Upcoming events of this club'}</h2>
-    <div class="card">${evs.length ? evs.map(k => eventRow(k) + (isAdmin() ? `<div style="text-align:right"><button class="btn danger small" data-delev="${k}">Delete</button></div>` : '')).join('') : '<div class="empty">No upcoming events.</div>'}</div>
+    <div class="card">${evs.length ? evs.map(k => eventRow(k, isAdmin() ? `<button class="btn danger small" data-delev="${esc(k)}">Delete</button>` : '')).join('') : '<div class="empty">No upcoming events.</div>'}</div>
     ${mine ? '<p><button class="btn" id="addEv">+ Add event</button></p>' : ''}`;
 }
 
