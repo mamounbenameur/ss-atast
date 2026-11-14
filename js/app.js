@@ -350,7 +350,7 @@ function viewCalendar() {
     <h2>This month</h2><div class="card">${list.length ? list.map(eventRow).join('') : '<div class="empty">No events this month.</div>'}</div>`;
 }
 function viewClubs() {
-  return `<h1>Clubs</h1><p class="sub">Nine clubs, each with its own board and members.</p>
+  return `<h1>Clubs</h1><p class="sub">10 clubs, each with its own board and members.</p>
     <div class="grid">${CLUBS.map(c => {
       const d = clubData[c.id] || {}, nM = Object.keys(d.members || {}).length;
       return `<a class="card club-card" href="#club/${c.id}" style="border-top:4px solid ${c.color}"><h3>${esc(c.name)}</h3>
