@@ -24,14 +24,14 @@ export const CLUBS = [
   { id: 'c1', name: 'ATAST Club UPSAT Sousse', color: '#3D6BF0', managerName: 'Hassen Ammara',     managerEmail: 'kalifameriam12@gmail.com' },
   { id: 'c2', name: 'ATAST Club ISSATSO',      color: '#C6438E', managerName: 'Abderrahman Limem', managerEmail: 'limemabderrahman@gmail.com' },
   { id: 'c3', name: 'ATAST Club ISIMM',        color: '#2E9B5C', managerName: 'Bouajila Yosr',     managerEmail: 'bouajilayosr@gmail.com' },
-  { id: 'c10', name: 'ATAST Club ISIMA',       color: '#8D5A3B', managerName: 'Lina Boubaker',                  managerEmail: 'linaboubaker2006@gmail.com' },
+  { id: 'c10', name: 'ATAST Club ISIMA',       color: '#8D5A3B', managerName: 'Lina Boubaker',     managerEmail: 'linaboubaker2006@gmail.com' },
   { id: 'c4', name: 'ATAST Club ISACM',        color: '#8CC63F', managerName: '',                  managerEmail: 'atastisacm@gmail.com' },
   { id: 'c5', name: 'ATAST Club Horizon',      color: '#E8792B', managerName: 'Adem Hmila',        managerEmail: 'adem.hmila@horizon-university.tn' },
   { id: 'c6', name: 'ATAST Club FMS',          color: '#2AACA4', managerName: 'Chaima Hmida',      managerEmail: 'chaimahmida16@gmail.com' },
   { id: 'c7', name: 'ATAST Club ISITCOM',      color: '#7B5FE0', managerName: 'Houssem Ahmed',     managerEmail: 'ahmedhoussem640@gmail.com' },
   { id: 'c8', name: 'ATAST Club ISMAIK',       color: '#E0B23D', managerName: 'Sara Aouinet',      managerEmail: 'saraaouinet14@gmail.com' },
   { id: 'c9', name: 'ATAST Club ISGIK',        color: '#E0473D', managerName: 'Fedi Mejrissi',     managerEmail: 'fedimejrissi26@gmail.com' },
-];
+  { id: 'c11', name: 'ATAST Club ESSTHS',      color: '#f393e6ff', managerName: '',                managerEmail: 'atastclubessths@gmail.com' },];
 
 // 2b) ADMIN EMAIL - this account can REMOVE any event, board member or member of any club.
 //     (It cannot add things for a club.) Create it in Firebase Authentication like a manager,
